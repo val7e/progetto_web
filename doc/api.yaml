@@ -3,7 +3,7 @@ info:
   title: WASAText
   description: |
     This is the API documentation for WASAText.
-  version: 2.0.1
+  version: 2.1.0
 servers:
   - url: http://localhost:3000
 security:
@@ -40,7 +40,7 @@ paths:
               description: Payload to login/register the user.
               type: object
               properties:
-                name: { $ref: "#/components/schemas/Username" }
+                username: { $ref: "#/components/schemas/Username" }
       responses:
         '200':
           description: Successful login
@@ -54,9 +54,8 @@ paths:
               example:
                 id: 17
                 profile:
-                  username: "alice123"
-                  name: "Alice"
-                  pic: "https://example.com/uploads/alice_pic.jpg"
+                  username: "alice1"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '201':
           description: Successful registration
           content:
@@ -69,10 +68,8 @@ paths:
               example:
                 id: 17
                 profile:
-                  username: "alice123"
-                  name: "Alice"
-                  pic: "https://example.com/uploads/alice_pic.jpg"
-          
+                  username: "alice1"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '400': { $ref: "#/components/responses/BadRequest" }
         '500': { $ref: "#/components/responses/InternalServerError" }
   /users:
@@ -104,17 +101,15 @@ paths:
                 items: { $ref: "#/components/schemas/User" }
               example:
                 - username: "alice1"
-                  name: "Alice"
-                  pic: "https://example.com/uploads/alice1_pic.jpg"
-                - username: "alice12"
-                  name: "Alice"
-                  pic: "https://example.com/uploads/alice12_pic.jpg"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
+                - username: "alice2"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
                 
         '400': { $ref: "#/components/responses/BadRequest" }
         '401': { $ref: "#/components/responses/Unauthorized" }
         '404': { $ref: "#/components/responses/NotFound" }
         '500': { $ref: "#/components/responses/InternalServerError" }
-  /users/name:
+  /users/me/username:
     put:
       tags:
         - Users
@@ -130,7 +125,7 @@ paths:
               description: Payload to update the user's name
               type: object
               properties:
-                name: { $ref: "#/components/schemas/Name" }
+                username: { $ref: "#/components/schemas/Username" }
         required: true
       responses:
         '200':
@@ -139,12 +134,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User"}
               example:
-                  username: "alice123"
-                  name: "Ali"
-                  pic: "https://example.com/uploads/alice123_pic.jpg"
+                  username: "alice3"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '400': { $ref: "#/components/responses/BadRequest" }
         '404': { $ref: "#/components/responses/NotFound" }
-  /users/profile-pic:
+  /users/me/pic:
     put:
       tags:
         - Users
@@ -170,9 +164,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
               example:
-                  username: "alice123"
-                  name: "Alice"
-                  pic: "https://example.com/uploads/alice1_pic.jpg"
+                  username: "alice1"
+                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '400': { $ref: "#/components/responses/BadRequest" }
         '404': { $ref: "#/components/responses/NotFound" }
 
@@ -255,7 +248,7 @@ paths:
                 members:
                   - "alice"
                   - "bob"
-                group_photo: "https://example.com/uploads/new_group_photo.jpg"
+                group_photo: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '404':
           $ref: "#/components/responses/NotFound"
   
@@ -304,7 +297,7 @@ paths:
                   - "bob"
                   - "prue"
                   - "phoebe"
-                group_photo: "https://example.com/uploads/group_photo.jpg"
+                group_photo: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '400':
           $ref: "#/components/responses/BadRequest"
         '404':
@@ -350,7 +343,7 @@ paths:
                   type: "user"
                   participants:
                     - "alice"
-                  photo: "https://example.com/uploads/alice_pic.jpg"
+                  photo: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
                   last_message:
                     timestamp: "2025-08-01T13:45:00Z"
                     preview: "Hey, how are you?"
@@ -360,7 +353,7 @@ paths:
                     - "prue"
                     - "phoebe"
                     - "piper"
-                  photo: "https://example.com/uploads/group_study.jpg"
+                  photo: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
                   last_message:
                     timestamp: "2025-08-01T12:22:00Z"
                     preview: "Photo"
@@ -424,7 +417,7 @@ paths:
                 id: 101
                 type: user
                 participants: ["alice"]
-                pic: "https://example.com/uploads/alice_pic.jpg"
+                pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
                 last_message:
                   timestamp: 2025-08-03T14:32:00Z
                   preview: "How are you?"
@@ -598,14 +591,14 @@ components:
 
   schemas:
     Id:
-      description:  Unique identifier for conversations, groups and messages
+      description:  Unique identifier for users, conversations, groups and messages
       type: integer
       format: int64
       minimum: 1
       example: 17
 
     Username:
-      description: Username of a user
+      description: Name of a user
       type: string
       pattern: '^[a-zA-Z0-9_.-]{3,13}$'
       minLength: 3
@@ -613,12 +606,12 @@ components:
       example: "alice123"
 
     Name:
-      description: Name of a user or a group
+      description: Name of a group
       type: string
       pattern: '^[a-zA-Z0-9_ ]+$'
       minLength: 3
       maxLength: 25
-      example: "Alice"
+      example: "Study group"
 
 
     User:
@@ -626,17 +619,17 @@ components:
       type: object
       properties:
         username: { $ref: "#/components/schemas/Username" }
-        name: { $ref: "#/components/schemas/Name" }
         pic: { $ref: "#/components/schemas/Pic" }
         
     Pic:
-      description: URL of a picture
+      description: Base64-encoded image data, it can be JPEG, PNG, GIF, WebP
       type: string
-      format: uri
-      pattern: '^https?:\/\/[\w\-_\.\/]+?\.(jpg|jpeg|png|gif|webp)(\?.*)?(\#.*)?$'
-      minLength: 10
-      maxLength: 2048
-      example: "https://example.com/uploads/user0_pic.jpg"
+      format: byte
+      pattern: '^[A-Za-z0-9+/]+={0,2}$'
+      minLength: 100
+      maxLength: 500000
+      example: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
+
 
     ConversationSummary:
       description: Conversation summary

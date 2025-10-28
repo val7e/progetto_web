@@ -7,23 +7,23 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/val7e/wasaText/service/api/reqcontext"
-	"github.com/val7e/wasaText/service/models"
 )
 
-// createGroup creates a new group with the authenticated user as creator
-// The creator is automatically added as the first member
+// createGroup creates a new group
 func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse request body
 	var req struct {
-		Name models.Name `json:"name"`
+		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -33,7 +33,6 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 
-	// Validate group name
 	if req.Name == "" {
 		ctx.Logger.Error("Group name is required")
 		w.WriteHeader(http.StatusBadRequest)
@@ -41,9 +40,8 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 
-	ctx.Logger.WithField("creator_id", userID).WithField("group_name", req.Name).Info("Creating group")
+	ctx.Logger.WithField("user_id", userID).WithField("group_name", req.Name).Info("Creating group")
 
-	// Create group in database
 	group, err := rt.db.CreateGroup(userID, req.Name)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Error creating group")
@@ -52,23 +50,23 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 
-	// Return created group
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(group)
 }
 
-// setGroupName updates a group's name
-// Only group members can update the name
-func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
+// getGroup retrieves group information including members
+func (rt *_router) getGroup(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse group ID from URL
 	groupID, err := strconv.ParseInt(ps.ByName("group_id"), 10, 64)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Invalid group ID")
@@ -77,9 +75,50 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 		return
 	}
 
-	// Parse request body
+	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).Info("Getting group")
+
+	group, err := rt.db.GetGroup(groupID)
+	if err != nil {
+		if err.Error() == "group not found" {
+			ctx.Logger.WithError(err).Error("Group not found")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
+			return
+		}
+
+		ctx.Logger.WithError(err).Error("Error getting group")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get group"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(group)
+}
+
+// setGroupName updates a group's name
+func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	groupID, err := strconv.ParseInt(ps.ByName("group_id"), 10, 64)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Invalid group ID")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		return
+	}
+
 	var req struct {
-		Name models.Name `json:"name"`
+		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -89,7 +128,6 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 		return
 	}
 
-	// Validate group name
 	if req.Name == "" {
 		ctx.Logger.Error("Group name is required")
 		w.WriteHeader(http.StatusBadRequest)
@@ -97,12 +135,10 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 		return
 	}
 
-	ctx.Logger.WithField("group_id", groupID).WithField("user_id", userID).Info("Updating group name")
+	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).WithField("new_name", req.Name).Info("Updating group name")
 
-	// Update group name in database
-	group, err := rt.db.SetGroupName(models.Id(groupID), req.Name)
+	group, err := rt.db.SetGroupName(groupID, req.Name)
 	if err != nil {
-		// Check if group not found
 		if err.Error() == "group not found" {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -110,30 +146,29 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 			return
 		}
 
-		// Other errors
 		ctx.Logger.WithError(err).Error("Error updating group name")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update group name"})
 		return
 	}
 
-	// Return updated group
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(group)
 }
 
 // setGroupPhoto updates a group's photo
-// Only group members can update the photo
 func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse group ID from URL
 	groupID, err := strconv.ParseInt(ps.ByName("group_id"), 10, 64)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Invalid group ID")
@@ -142,9 +177,8 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 		return
 	}
 
-	// Parse request body
 	var req struct {
-		Photo models.Pic `json:"photo"`
+		Photo string `json:"photo"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -154,20 +188,16 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 		return
 	}
 
-	// Validate photo (base64 encoded)
 	if req.Photo == "" {
-		ctx.Logger.Error("Photo is required")
+		ctx.Logger.Error("Group photo is required")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Photo is required"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group photo is required"})
 		return
 	}
 
-	ctx.Logger.WithField("group_id", groupID).WithField("user_id", userID).Info("Updating group photo")
-
-	// Update group photo in database
-	group, err := rt.db.SetGroupPhoto(models.Id(groupID), string(req.Photo))
+	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).Info("Updating group photo")
+	group, err := rt.db.SetGroupPhoto(groupID, req.Photo)
 	if err != nil {
-		// Check if group not found
 		if err.Error() == "group not found" {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -175,38 +205,36 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 			return
 		}
 
-		// Check for invalid base64
-		if err.Error() == "invalid base64 photo data" {
+		if err.Error() == "invalid base64 photo data" || err.Error() == "invalid base64 photo data: illegal base64 data at input byte 0" {
 			ctx.Logger.WithError(err).Error("Invalid photo format")
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid photo format. Photo must be base64 encoded"})
 			return
 		}
 
-		// Other errors
 		ctx.Logger.WithError(err).Error("Error updating group photo")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update group photo"})
 		return
 	}
 
-	// Return updated group
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(group)
 }
 
-// addToGroup adds members to a group by their usernames
-// Only group members can add new members
+// addToGroup adds members to a group
 func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse group ID from URL
 	groupID, err := strconv.ParseInt(ps.ByName("group_id"), 10, 64)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Invalid group ID")
@@ -215,9 +243,8 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	// Parse request body
 	var req struct {
-		Members []models.Username `json:"members"`
+		Members []string `json:"members"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -227,20 +254,17 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	// Validate members list
 	if len(req.Members) == 0 {
-		ctx.Logger.Error("Members list is empty")
+		ctx.Logger.Error("At least one member username is required")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "At least one member username is required"})
 		return
 	}
 
-	ctx.Logger.WithField("group_id", groupID).WithField("user_id", userID).WithField("members_count", len(req.Members)).Info("Adding members to group")
+	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).WithField("members", req.Members).Info("Adding members to group")
 
-	// Add members to group in database
-	group, err := rt.db.AddToGroup(models.Id(groupID), req.Members)
+	group, err := rt.db.AddToGroup(groupID, req.Members)
 	if err != nil {
-		// Check if group not found
 		if err.Error() == "group not found" {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -248,30 +272,29 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 			return
 		}
 
-		// Other errors
 		ctx.Logger.WithError(err).Error("Error adding members to group")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to add members to group"})
 		return
 	}
 
-	// Return updated group with new members
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(group)
 }
 
 // leaveGroup removes the authenticated user from a group
-// The user must be a member of the group to leave it
 func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse group ID from URL
 	groupID, err := strconv.ParseInt(ps.ByName("group_id"), 10, 64)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Invalid group ID")
@@ -280,26 +303,29 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	ctx.Logger.WithField("group_id", groupID).WithField("user_id", userID).Info("User leaving group")
+	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).Info("User leaving group")
 
-	// Remove user from group in database
-	err = rt.db.LeaveGroup(models.Id(groupID), userID)
+	err = rt.db.LeaveGroup(groupID, userID)
 	if err != nil {
-		// Check if user not member of group
-		if err.Error() == "user not member of group" {
-			ctx.Logger.WithError(err).Error("User not member of group")
+		if err.Error() == "group not found" {
+			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
+			return
+		}
+
+		if err.Error() == "user not member of group" {
+			ctx.Logger.WithError(err).Error("User not in group")
+			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "You are not a member of this group"})
 			return
 		}
 
-		// Other errors
 		ctx.Logger.WithError(err).Error("Error leaving group")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to leave group"})
 		return
 	}
 
-	// Return success (204 No Content)
 	w.WriteHeader(http.StatusNoContent)
 }

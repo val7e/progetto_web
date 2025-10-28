@@ -10,7 +10,7 @@ import (
 )
 
 // CreateGroup creates a new group
-func (db *appdbimpl) CreateGroup(creatorID int64, name models.Name) (*models.Group, error) {
+func (db *appdbimpl) CreateGroup(creatorID int64, name string) (*models.Group, error) {
 	// Insert group
 	result, err := db.c.Exec(
 		"INSERT INTO groups (name, created_at, updated_at) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -34,11 +34,16 @@ func (db *appdbimpl) CreateGroup(creatorID int64, name models.Name) (*models.Gro
 		return nil, fmt.Errorf("error adding creator to group: %w", err)
 	}
 
-	return db.getGroupByID(models.Id(groupID))
+	return db.getGroupByID(groupID)
+}
+
+// GetGroup retrieves group information by ID
+func (db *appdbimpl) GetGroup(groupID int64) (*models.Group, error) {
+	return db.getGroupByID(groupID)
 }
 
 // SetGroupName sets a group's name
-func (db *appdbimpl) SetGroupName(groupID models.Id, name models.Name) (*models.Group, error) {
+func (db *appdbimpl) SetGroupName(groupID int64, name string) (*models.Group, error) {
 	_, err := db.c.Exec(
 		"UPDATE groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 		string(name), groupID,
@@ -51,7 +56,7 @@ func (db *appdbimpl) SetGroupName(groupID models.Id, name models.Name) (*models.
 }
 
 // SetGroupPhoto sets a group's photo
-func (db *appdbimpl) SetGroupPhoto(groupID models.Id, photoBase64 string) (*models.Group, error) {
+func (db *appdbimpl) SetGroupPhoto(groupID int64, photoBase64 string) (*models.Group, error) {
 	photoBytes, err := base64.StdEncoding.DecodeString(photoBase64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base64 photo data: %w", err)
@@ -70,7 +75,7 @@ func (db *appdbimpl) SetGroupPhoto(groupID models.Id, photoBase64 string) (*mode
 }
 
 // AddToGroup adds members to a group
-func (db *appdbimpl) AddToGroup(groupID models.Id, memberUsernames []models.Username) (*models.Group, error) {
+func (db *appdbimpl) AddToGroup(groupID int64, memberUsernames []string) (*models.Group, error) {
 	// Verify group exists
 	var groupExists int
 	err := db.c.QueryRow("SELECT COUNT(*) FROM groups WHERE id = ?", groupID).Scan(&groupExists)
@@ -103,7 +108,7 @@ func (db *appdbimpl) AddToGroup(groupID models.Id, memberUsernames []models.User
 }
 
 // LeaveGroup removes a user from a group
-func (db *appdbimpl) LeaveGroup(groupID models.Id, userID int64) error {
+func (db *appdbimpl) LeaveGroup(groupID, userID int64) error {
 	result, err := db.c.Exec(
 		"DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
 		groupID, userID,
@@ -124,7 +129,7 @@ func (db *appdbimpl) LeaveGroup(groupID models.Id, userID int64) error {
 }
 
 // Helper function to get group by ID
-func (db *appdbimpl) getGroupByID(groupID models.Id) (*models.Group, error) {
+func (db *appdbimpl) getGroupByID(groupID int64) (*models.Group, error) {
 	var group models.Group
 	var photoBytes []byte
 
@@ -143,7 +148,7 @@ func (db *appdbimpl) getGroupByID(groupID models.Id) (*models.Group, error) {
 	// Convert BLOB to base64 if photo exists
 	if len(photoBytes) > 0 {
 		photoBase64 := base64.StdEncoding.EncodeToString(photoBytes)
-		pic := models.Pic(photoBase64)
+		pic := photoBase64
 		group.GroupPhoto = &pic
 	}
 
@@ -162,9 +167,9 @@ func (db *appdbimpl) getGroupByID(groupID models.Id) (*models.Group, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var members []models.Username
+	var members []string
 	for rows.Next() {
-		var username models.Username
+		var username string
 		if err := rows.Scan(&username); err != nil {
 			return nil, fmt.Errorf("error scanning member: %w", err)
 		}

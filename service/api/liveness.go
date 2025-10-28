@@ -14,7 +14,7 @@ func (rt *_router) liveness(w http.ResponseWriter, r *http.Request, ps httproute
 	if err := rt.db.Ping(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
 			"error":  "database not available",
 		})
@@ -23,7 +23,7 @@ func (rt *_router) liveness(w http.ResponseWriter, r *http.Request, ps httproute
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
 }

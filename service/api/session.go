@@ -2,24 +2,23 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/val7e/wasaText/service/api/reqcontext"
-	"github.com/val7e/wasaText/service/models"
 )
 
-// doLogin handles user login/registration
-// If the user doesn't exist, a new user is created with a default profile picture
-// Returns the user ID and user profile
+// doLogin handles user registration/login
+// if the user does not exist, it will be registered with a default profile picture
+// If the user exists, it returns the existing user profile
 func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse request body
 	var req struct {
-		Name models.Username `json:"name"`
+		Username string `json:"username"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -29,78 +28,69 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 		return
 	}
 
-	// Validate username
-	if req.Name == "" {
+	if req.Username == "" {
 		ctx.Logger.Error("Username is required")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Username is required"})
 		return
 	}
 
-	ctx.Logger.WithField("username", req.Name).Info("Processing login")
+	ctx.Logger.WithField("username", req.Username).Info("Login/Registration attempt")
 
-	// Perform login/registration
-	user, userID, err := rt.db.DoLogin(req.Name)
+	user, isNewUser, err := rt.db.DoLogin(req.Username)
 	if err != nil {
-		ctx.Logger.WithError(err).Error("Error during login")
+		if err.Error() == "username must be between 3 and 25 characters" ||
+			err.Error() == "username can only contain letters, numbers, underscores, and hyphens" {
+			ctx.Logger.WithError(err).Error("Username validation failed")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		ctx.Logger.WithError(err).Error("Error during login/registration")
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to login"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to login/register"})
 		return
 	}
 
-	// Prepare response
-	response := struct {
-		Identifier int64       `json:"identifier"`
-		Profile    models.User `json:"profile"`
-	}{
-		Identifier: userID,
-		Profile:    *user,
+	// Return user identifier
+	// used by the client in Authorization header
+	response := map[string]interface{}{
+		"identifier": strconv.FormatInt(user.Id, 10),
+		"username":   user.Username,
+		"pic":        user.Pic,
 	}
 
-	// Return success response
-	w.WriteHeader(http.StatusOK)
+	if isNewUser {
+		ctx.Logger.WithField("user_id", user.Id).Info("New user registered")
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		ctx.Logger.WithField("user_id", user.Id).Info("Existing user logged in")
+		w.WriteHeader(http.StatusOK)
+	}
+
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// authenticateRequest extracts and validates the Bearer token from the Authorization header
-// Returns the authenticated user ID and username, or sends an error response and returns false
-func (rt *_router) authenticateRequest(w http.ResponseWriter, r *http.Request, ctx reqcontext.RequestContext) (int64, models.Username, bool) {
-	// Get Authorization header
+// getUserFromAuth extracts user ID from Authorization header
+// What to write: "Bearer <user_id>"
+func (rt *_router) getUserFromAuth(r *http.Request) (int64, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		ctx.Logger.Error("Missing Authorization header")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Missing Authorization header"})
-		return 0, "", false
+		return 0, fmt.Errorf("authorization header required")
 	}
 
-	// Check Bearer format
+	// Split "Bearer <user_id>"
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		ctx.Logger.Error("Invalid Authorization header format")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid Authorization format. Expected 'Bearer <token>'"})
-		return 0, "", false
+		return 0, fmt.Errorf("invalid authorization format. Expected: Bearer <user_id>")
 	}
 
-	// Parse user ID from token
+	// Parse user ID
 	userID, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		ctx.Logger.WithError(err).Error("Invalid token format")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token"})
-		return 0, "", false
+		return 0, fmt.Errorf("invalid user identifier")
 	}
 
-	// Verify user exists
-	user, err := rt.db.GetUserByID(userID)
-	if err != nil {
-		ctx.Logger.WithError(err).Error("User not found")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token: user not found"})
-		return 0, "", false
-	}
-
-	ctx.Logger.WithField("user_id", userID).WithField("username", user.Username).Info("User authenticated")
-	return userID, user.Username, true
+	return userID, nil
 }

@@ -52,7 +52,6 @@ paths:
                 properties:
                   profile: { $ref: "#/components/schemas/User"}
               example:
-                id: 17
                 profile:
                   username: "alice1"
                   pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
@@ -66,7 +65,6 @@ paths:
                 properties:
                   profile: { $ref: "#/components/schemas/User"}
               example:
-                id: 17
                 profile:
                   username: "alice1"
                   pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
@@ -600,7 +598,7 @@ components:
     Username:
       description: Name of a user
       type: string
-      pattern: '^[a-zA-Z0-9_.-]{3,13}$'
+      pattern: '^[a-zA-Z0-9_.-]{3,25}$'
       minLength: 3
       maxLength: 25
       example: "alice123"

@@ -11,7 +11,7 @@ import (
 )
 
 // SendMessage sends a message in a conversation
-func (db *appdbimpl) SendMessage(conversationID models.Id, senderID int64, message models.NewMessage) (*models.Message, error) {
+func (db *appdbimpl) SendMessage(conversationID, senderID int64, message models.NewMessage) (*models.Message, error) {
 	// Verify user is participant in conversation
 	var participantCount int
 	err := db.c.QueryRow(`
@@ -58,7 +58,7 @@ func (db *appdbimpl) SendMessage(conversationID models.Id, senderID int64, messa
 }
 
 // ForwardMessage forwards an existing message to another conversation
-func (db *appdbimpl) ForwardMessage(messageID, recipientConversationID models.Id, authorID int64) (*models.Message, error) {
+func (db *appdbimpl) ForwardMessage(messageID, recipientConversationID, authorID int64) (*models.Message, error) {
 	// Verify author is participant in recipient conversation
 	var participantCount int
 	err := db.c.QueryRow(`
@@ -105,10 +105,10 @@ func (db *appdbimpl) ForwardMessage(messageID, recipientConversationID models.Id
 }
 
 // DeleteMessage deletes a message
-func (db *appdbimpl) DeleteMessage(messageID, conversationID models.Id, userID int64) error {
+func (db *appdbimpl) DeleteMessage(messageID, conversationID, userID int64) error {
 	// Verify message exists in the specified conversation and user is the sender
 	var senderID int64
-	var msgConversationID models.Id
+	var msgConversationID int64
 
 	err := db.c.QueryRow(
 		"SELECT sender_id, conversation_id FROM messages WHERE id = ?",
@@ -142,9 +142,9 @@ func (db *appdbimpl) DeleteMessage(messageID, conversationID models.Id, userID i
 }
 
 // CommentMessage adds a comment to a message
-func (db *appdbimpl) CommentMessage(messageID, conversationID models.Id, authorID int64, comment models.NewComment) (*models.Comment, error) {
+func (db *appdbimpl) CommentMessage(messageID, conversationID, authorID int64, comment models.NewComment) (*models.Comment, error) {
 	// Verify message exists and belongs to the conversation
-	var msgConversationID models.Id
+	var msgConversationID int64
 	err := db.c.QueryRow(
 		"SELECT conversation_id FROM messages WHERE id = ?",
 		messageID,
@@ -188,23 +188,23 @@ func (db *appdbimpl) CommentMessage(messageID, conversationID models.Id, authorI
 	}
 
 	// Get username
-	var username models.Username
+	var username string
 	err = db.c.QueryRow("SELECT username FROM users WHERE id = ?", authorID).Scan(&username)
 	if err != nil {
 		return nil, fmt.Errorf("error getting username: %w", err)
 	}
 
 	return &models.Comment{
-		Id:     models.Id(commentID),
+		Id:     int64(commentID),
 		Author: username,
 		Text:   comment.Text,
 	}, nil
 }
 
 // UncommentMessage deletes a comment from a message
-func (db *appdbimpl) UncommentMessage(messageID, conversationID models.Id, userID int64) error {
+func (db *appdbimpl) UncommentMessage(messageID, conversationID, userID int64) error {
 	// Verify message belongs to conversation
-	var msgConversationID models.Id
+	var msgConversationID int64
 	err := db.c.QueryRow(
 		"SELECT conversation_id FROM messages WHERE id = ?",
 		messageID,
@@ -243,7 +243,7 @@ func (db *appdbimpl) UncommentMessage(messageID, conversationID models.Id, userI
 }
 
 // GetComments retrieves all comments for a message
-func (db *appdbimpl) GetComments(messageID models.Id) ([]models.Comment, error) {
+func (db *appdbimpl) GetComments(messageID int64) ([]models.Comment, error) {
 	rows, err := db.c.Query(`
 		SELECT c.id, u.username, c.text
 		FROM comments c
@@ -275,13 +275,13 @@ func (db *appdbimpl) GetComments(messageID models.Id) ([]models.Comment, error) 
 	return comments, nil
 }
 
-// Helper function to get message by ID
+// getMessageByID retrieve a message by its ID
 func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	var msg models.Message
 	var text sql.NullString
 	var photoBytes []byte
 	var timestamp time.Time
-	var senderUsername models.Username
+	var senderUsername string
 
 	err := db.c.QueryRow(`
 		SELECT m.id, u.username, m.type, m.text, m.photo, m.timestamp
@@ -298,7 +298,7 @@ func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	}
 
 	msg.Sender = senderUsername
-	msg.Timestamp = models.Timestamp(timestamp)
+	msg.Timestamp = time.Time(timestamp)
 
 	// Set text if present
 	if text.Valid {
@@ -308,7 +308,7 @@ func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	// Convert photo BLOB to base64 if present
 	if len(photoBytes) > 0 {
 		photoBase64 := base64.StdEncoding.EncodeToString(photoBytes)
-		pic := models.Pic(photoBase64)
+		pic := photoBase64
 		msg.Photo = &pic
 	}
 
@@ -335,9 +335,9 @@ func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var authors []models.Username
+	var authors []string
 	for rows.Next() {
-		var author models.Username
+		var author string
 		if err := rows.Scan(&author); err != nil {
 			return nil, fmt.Errorf("error scanning author: %w", err)
 		}

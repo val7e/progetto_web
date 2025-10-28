@@ -45,33 +45,35 @@ type AppDatabase interface {
 	Ping() error
 
 	// User operations defined in users.go
-	DoLogin(username models.Username) (*models.User, int64, error)
-	SearchUsers(query models.Username) ([]models.User, error)
-	SetMyUserName(userID int64, newUsername models.Username) (*models.User, error)
+	DoLogin(username string) (*models.User, bool, error)
+	SearchUser(query string) ([]models.User, error)
+	SetMyUserName(userID int64, newUsername string) (*models.User, error)
 	SetMyPhoto(userID int64, newPic string) (*models.User, error)
 	GetUserByID(userID int64) (*models.User, error)
+	GetUserByUsername(username string) (*models.User, error)
 
 	// Conversation operations defined in conversations.go
 	GetMyConversations(userID int64) ([]models.ConversationSummary, error)
-	GetConversation(conversationID models.Id, userID int64) (*models.Conversation, error)
-	StartConversation(senderID int64, recipientUsername models.Username) (*models.Conversation, error)
+	GetConversation(conversationID int64, userID int64) (*models.Conversation, error)
+	StartConversation(senderID int64, recipientUsername string) (*models.Conversation, error)
 
 	// Group operations defined in groups.go
-	CreateGroup(creatorID int64, name models.Name) (*models.Group, error)
-	SetGroupName(groupID models.Id, name models.Name) (*models.Group, error)
-	SetGroupPhoto(groupID models.Id, photo string) (*models.Group, error)
-	AddToGroup(groupID models.Id, memberUsernames []models.Username) (*models.Group, error)
-	LeaveGroup(groupID models.Id, userID int64) error
+	CreateGroup(creatorID int64, name string) (*models.Group, error)
+	GetGroup(groupID int64) (*models.Group, error)
+	SetGroupName(groupID int64, name string) (*models.Group, error)
+	SetGroupPhoto(groupID int64, photo string) (*models.Group, error)
+	AddToGroup(groupID int64, memberUsernames []string) (*models.Group, error)
+	LeaveGroup(groupID int64, userID int64) error
 
 	// Message operations defined in messages.go
-	SendMessage(conversationID models.Id, senderID int64, message models.NewMessage) (*models.Message, error)
-	ForwardMessage(messageID, recipientConversationID models.Id, authorID int64) (*models.Message, error)
-	DeleteMessage(messageID, conversationID models.Id, userID int64) error
+	SendMessage(conversationID int64, senderID int64, message models.NewMessage) (*models.Message, error)
+	ForwardMessage(messageID, recipientConversationID int64, authorID int64) (*models.Message, error)
+	DeleteMessage(messageID, conversationID int64, userID int64) error
 
 	// Comment operations defined in messages.go
-	CommentMessage(messageID, conversationID models.Id, authorID int64, comment models.NewComment) (*models.Comment, error)
-	UncommentMessage(messageID, conversationID models.Id, userID int64) error
-	GetComments(messageID models.Id) ([]models.Comment, error)
+	CommentMessage(messageID, conversationID int64, authorID int64, comment models.NewComment) (*models.Comment, error)
+	UncommentMessage(messageID, conversationID int64, userID int64) error
+	GetComments(messageID int64) ([]models.Comment, error)
 }
 
 type appdbimpl struct {

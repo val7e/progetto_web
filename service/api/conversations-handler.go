@@ -7,23 +7,23 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/val7e/wasaText/service/api/reqcontext"
-	"github.com/val7e/wasaText/service/models"
 )
 
 // getMyConversations retrieves all conversations for the authenticated user
-// Returns a list of conversation summaries with last message preview
 func (rt *_router) getMyConversations(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	ctx.Logger.WithField("user_id", userID).Info("Fetching conversations")
 
-	// Get conversations from database
 	conversations, err := rt.db.GetMyConversations(userID)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Error fetching conversations")
@@ -32,23 +32,23 @@ func (rt *_router) getMyConversations(w http.ResponseWriter, r *http.Request, ps
 		return
 	}
 
-	// Return conversations
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(conversations)
 }
 
-// getConversation retrieves a specific conversation with all messages
-// Requires the user to be a participant in the conversation
+// getConversation retrieves a specific conversation with messages
 func (rt *_router) getConversation(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Parse conversation ID from URL
 	conversationID, err := strconv.ParseInt(ps.ByName("conversation_id"), 10, 64)
 	if err != nil {
 		ctx.Logger.WithError(err).Error("Invalid conversation ID")
@@ -59,18 +59,9 @@ func (rt *_router) getConversation(w http.ResponseWriter, r *http.Request, ps ht
 
 	ctx.Logger.WithField("conversation_id", conversationID).WithField("user_id", userID).Info("Fetching conversation")
 
-	// Get conversation from database
-	conversation, err := rt.db.GetConversation(models.Id(conversationID), userID)
+	// Pass userID to check if user is participant
+	conversation, err := rt.db.GetConversation(conversationID, userID)
 	if err != nil {
-		// Check if it's an authorization error (user not participant)
-		if err.Error() == "user not participant in conversation" {
-			ctx.Logger.WithError(err).Error("User not authorized to view conversation")
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "You are not a participant in this conversation"})
-			return
-		}
-
-		// Check if conversation not found
 		if err.Error() == "conversation not found" {
 			ctx.Logger.WithError(err).Error("Conversation not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -78,32 +69,39 @@ func (rt *_router) getConversation(w http.ResponseWriter, r *http.Request, ps ht
 			return
 		}
 
-		// Other errors
+		if err.Error() == "user not participant in conversation" {
+			ctx.Logger.WithError(err).Error("User not participant")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "You are not a participant in this conversation"})
+			return
+		}
+
 		ctx.Logger.WithError(err).Error("Error fetching conversation")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to retrieve conversation"})
 		return
 	}
 
-	// Return conversation
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(conversation)
 }
 
-// startConversation creates a new direct conversation between the authenticated user and a recipient
-// If a conversation already exists, it returns the existing one
+// startConversation creates a new direct conversation
 func (rt *_router) startConversation(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Authenticate user
-	userID, _, ok := rt.authenticateRequest(w, r, ctx)
-	if !ok {
+	// Get user ID from Authorization header
+	userID, err := rt.getUserFromAuth(r)
+	if err != nil {
+		ctx.Logger.WithError(err).Error("Authorization failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	// Parse request body
 	var req struct {
-		Recipient models.Username `json:"recipient"`
+		Recipient string `json:"recipient"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -113,7 +111,6 @@ func (rt *_router) startConversation(w http.ResponseWriter, r *http.Request, ps 
 		return
 	}
 
-	// Validate recipient username
 	if req.Recipient == "" {
 		ctx.Logger.Error("Recipient username is required")
 		w.WriteHeader(http.StatusBadRequest)
@@ -121,12 +118,10 @@ func (rt *_router) startConversation(w http.ResponseWriter, r *http.Request, ps 
 		return
 	}
 
-	ctx.Logger.WithField("sender_id", userID).WithField("recipient", req.Recipient).Info("Starting conversation")
+	ctx.Logger.WithField("user_id", userID).WithField("recipient", req.Recipient).Info("Starting conversation")
 
-	// Start conversation in database
 	conversation, err := rt.db.StartConversation(userID, req.Recipient)
 	if err != nil {
-		// Check if recipient not found
 		if err.Error() == "recipient user not found" {
 			ctx.Logger.WithError(err).Error("Recipient user not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -134,14 +129,12 @@ func (rt *_router) startConversation(w http.ResponseWriter, r *http.Request, ps 
 			return
 		}
 
-		// Other errors
 		ctx.Logger.WithError(err).Error("Error starting conversation")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to start conversation"})
 		return
 	}
 
-	// Return conversation (201 Created for new conversations)
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(conversation)
 }

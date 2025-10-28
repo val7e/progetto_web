@@ -13,14 +13,15 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.POST("/session", rt.wrap(rt.doLogin))
 
 	rt.router.GET("/users", rt.wrap(rt.searchUser))
-	rt.router.PUT("/users/me", rt.wrap(rt.setMyUserName))
-	rt.router.PUT("/users/me/pic", rt.wrap(rt.setMyPic))
+	rt.router.PUT("/users/me/username", rt.wrap(rt.setMyUserName))
+	rt.router.PUT("/users/me/pic", rt.wrap(rt.setMyPhoto))
 
 	rt.router.GET("/conversations", rt.wrap(rt.getMyConversations))
 	rt.router.POST("/conversations", rt.wrap(rt.startConversation))
 	rt.router.GET("/conversations/:conversation_id", rt.wrap(rt.getConversation))
 
 	rt.router.POST("/groups", rt.wrap(rt.createGroup))
+	rt.router.GET("/groups/:group_id", rt.wrap(rt.getGroup))
 	rt.router.PUT("/groups/:group_id/name", rt.wrap(rt.setGroupName))
 	rt.router.PUT("/groups/:group_id/photo", rt.wrap(rt.setGroupPhoto))
 	rt.router.POST("/groups/:group_id/members", rt.wrap(rt.addToGroup))

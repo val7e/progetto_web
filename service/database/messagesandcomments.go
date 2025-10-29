@@ -26,7 +26,7 @@ func (db *appdbimpl) SendMessage(conversationID, senderID int64, message models.
 	// Handle photo if present
 	var photoBytes []byte
 	if message.Photo != nil && *message.Photo != "" {
-		photoBytes, err = base64.StdEncoding.DecodeString(string(*message.Photo))
+		photoBytes, err = base64.StdEncoding.DecodeString(*message.Photo)
 		if err != nil {
 			return nil, fmt.Errorf("invalid base64 photo data: %w", err)
 		}
@@ -195,7 +195,7 @@ func (db *appdbimpl) CommentMessage(messageID, conversationID, authorID int64, c
 	}
 
 	return &models.Comment{
-		Id:     int64(commentID),
+		Id:     commentID,
 		Author: username,
 		Text:   comment.Text,
 	}, nil
@@ -250,7 +250,7 @@ func (db *appdbimpl) GetComments(messageID int64) ([]models.Comment, error) {
 		INNER JOIN users u ON c.user_id = u.id
 		WHERE c.message_id = ?
 		ORDER BY c.timestamp ASC
-		LIMIT 1000
+		LIMIT 100
 	`, messageID)
 
 	if err != nil {
@@ -298,7 +298,7 @@ func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	}
 
 	msg.Sender = senderUsername
-	msg.Timestamp = time.Time(timestamp)
+	msg.Timestamp = timestamp
 
 	// Set text if present
 	if text.Valid {
@@ -335,7 +335,7 @@ func (db *appdbimpl) getMessageByID(messageID int64) (*models.Message, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var authors []string
+	var authors = []string{}
 	for rows.Next() {
 		var author string
 		if err := rows.Scan(&author); err != nil {

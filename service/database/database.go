@@ -133,9 +133,11 @@ func createTables(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
+			conversation_id INTEGER NOT NULL,
 			group_photo BLOB,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 		);`,
 
 		// group_members table

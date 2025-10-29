@@ -9,12 +9,27 @@ import (
 	"github.com/val7e/wasaText/service/models"
 )
 
+const ErrGroupNotFound = "group not found"
+
 // CreateGroup creates a new group
 func (db *appdbimpl) CreateGroup(creatorID int64, name string) (*models.Group, error) {
-	// Insert group
+	// Create conversation first with type 'group'
 	result, err := db.c.Exec(
-		"INSERT INTO groups (name, created_at, updated_at) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-		string(name),
+		"INSERT INTO conversations (type, created_at, updated_at) VALUES ('group', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating conversation: %w", err)
+	}
+
+	conversationID, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("error getting conversation ID: %w", err)
+	}
+
+	// Insert group with conversation_id
+	result, err = db.c.Exec(
+		"INSERT INTO groups (name, conversation_id, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+		name, conversationID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating group: %w", err)
@@ -23,6 +38,15 @@ func (db *appdbimpl) CreateGroup(creatorID int64, name string) (*models.Group, e
 	groupID, err := result.LastInsertId()
 	if err != nil {
 		return nil, fmt.Errorf("error getting group ID: %w", err)
+	}
+
+	// Add creator as participant in conversation
+	_, err = db.c.Exec(
+		"INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)",
+		conversationID, creatorID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error adding creator to conversation: %w", err)
 	}
 
 	// Add creator as first member
@@ -46,7 +70,7 @@ func (db *appdbimpl) GetGroup(groupID int64) (*models.Group, error) {
 func (db *appdbimpl) SetGroupName(groupID int64, name string) (*models.Group, error) {
 	_, err := db.c.Exec(
 		"UPDATE groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-		string(name), groupID,
+		name, groupID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error updating group name: %w", err)
@@ -76,17 +100,17 @@ func (db *appdbimpl) SetGroupPhoto(groupID int64, photoBase64 string) (*models.G
 
 // AddToGroup adds members to a group
 func (db *appdbimpl) AddToGroup(groupID int64, memberUsernames []string) (*models.Group, error) {
-	// Verify group exists
-	var groupExists int
-	err := db.c.QueryRow("SELECT COUNT(*) FROM groups WHERE id = ?", groupID).Scan(&groupExists)
-	if err != nil || groupExists == 0 {
-		return nil, fmt.Errorf("group not found")
+	// Get group's conversation_id
+	var conversationID int64
+	err := db.c.QueryRow("SELECT conversation_id FROM groups WHERE id = ?", groupID).Scan(&conversationID)
+	if err != nil {
+		return nil, fmt.Errorf(ErrGroupNotFound)
 	}
 
 	// Add each member
 	for _, username := range memberUsernames {
 		var userID int64
-		err := db.c.QueryRow("SELECT id FROM users WHERE username = ?", string(username)).Scan(&userID)
+		err := db.c.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue // Skip non-existent users
 		}
@@ -101,6 +125,15 @@ func (db *appdbimpl) AddToGroup(groupID int64, memberUsernames []string) (*model
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error adding member: %w", err)
+		}
+
+		// Add to conversation_participants
+		_, err = db.c.Exec(
+			"INSERT OR IGNORE INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)",
+			conversationID, userID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error adding member to conversation: %w", err)
 		}
 	}
 
@@ -134,12 +167,12 @@ func (db *appdbimpl) getGroupByID(groupID int64) (*models.Group, error) {
 	var photoBytes []byte
 
 	err := db.c.QueryRow(
-		"SELECT id, name, group_photo FROM groups WHERE id = ?",
+		"SELECT id, name, conversation_id, group_photo FROM groups WHERE id = ?",
 		groupID,
-	).Scan(&group.Id, &group.Name, &photoBytes)
+	).Scan(&group.Id, &group.Name, &group.ConversationID, &photoBytes)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("group not found")
+		return nil, fmt.Errorf(ErrGroupNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error getting group: %w", err)
@@ -154,13 +187,13 @@ func (db *appdbimpl) getGroupByID(groupID int64) (*models.Group, error) {
 
 	// Get members
 	rows, err := db.c.Query(`
-		SELECT u.username
-		FROM users u
-		INNER JOIN group_members gm ON u.id = gm.user_id
-		WHERE gm.group_id = ?
-		ORDER BY u.username
-		LIMIT 1000
-	`, groupID)
+        SELECT u.username
+        FROM users u
+        INNER JOIN group_members gm ON u.id = gm.user_id
+        WHERE gm.group_id = ?
+        ORDER BY u.username
+        LIMIT 1000
+    `, groupID)
 
 	if err != nil {
 		return nil, fmt.Errorf("error getting members: %w", err)

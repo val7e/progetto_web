@@ -131,17 +131,24 @@ func (db *appdbimpl) SetMyUserName(userID int64, newUsername string) (*models.Us
 		return nil, err
 	}
 
-	// checks if the chosen username is already in use
 	var existingID int64
 	err := db.c.QueryRow("SELECT id FROM users WHERE username = ?", newUsername).Scan(&existingID)
-	if err == nil && existingID != userID {
-		return nil, fmt.Errorf("username already taken")
+
+	if err == nil {
+		// Username exists, check if it's a different user
+		if existingID != userID {
+			return nil, fmt.Errorf("username already taken")
+		}
+		// Same user, same username - just return current user (no update needed)
+		return db.GetUserByID(userID)
 	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		// Database error
 		return nil, fmt.Errorf("error checking username availability: %w", err)
 	}
 
-	// updates the username
+	// Username is available, update it
 	_, err = db.c.Exec(
 		"UPDATE users SET username = ? WHERE id = ?",
 		newUsername, userID,
@@ -150,7 +157,7 @@ func (db *appdbimpl) SetMyUserName(userID int64, newUsername string) (*models.Us
 		return nil, fmt.Errorf("error updating username: %w", err)
 	}
 
-	// returns the updated user
+	// Return the updated user
 	return db.GetUserByID(userID)
 }
 

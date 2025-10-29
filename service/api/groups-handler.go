@@ -7,6 +7,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/val7e/wasaText/service/api/reqcontext"
+	"github.com/val7e/wasaText/service/database"
 )
 
 // createGroup creates a new group
@@ -79,7 +80,7 @@ func (rt *_router) getGroup(w http.ResponseWriter, r *http.Request, ps httproute
 
 	group, err := rt.db.GetGroup(groupID)
 	if err != nil {
-		if err.Error() == "group not found" {
+		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
@@ -139,7 +140,7 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 
 	group, err := rt.db.SetGroupName(groupID, req.Name)
 	if err != nil {
-		if err.Error() == "group not found" {
+		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
@@ -198,7 +199,7 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).Info("Updating group photo")
 	group, err := rt.db.SetGroupPhoto(groupID, req.Photo)
 	if err != nil {
-		if err.Error() == "group not found" {
+		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
@@ -265,7 +266,7 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 
 	group, err := rt.db.AddToGroup(groupID, req.Members)
 	if err != nil {
-		if err.Error() == "group not found" {
+		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
@@ -307,7 +308,7 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 
 	err = rt.db.LeaveGroup(groupID, userID)
 	if err != nil {
-		if err.Error() == "group not found" {
+		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})

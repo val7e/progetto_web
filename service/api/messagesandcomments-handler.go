@@ -123,7 +123,7 @@ func (rt *_router) forwardMessage(w http.ResponseWriter, r *http.Request, ps htt
 
 	// Parse request body
 	var req struct {
-		RecipientConversationID int64 `json:"recipient_conversation_id"`
+		RecipientUsername string `json:"recipient_username"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -133,24 +133,32 @@ func (rt *_router) forwardMessage(w http.ResponseWriter, r *http.Request, ps htt
 		return
 	}
 
-	if req.RecipientConversationID == 0 {
-		ctx.Logger.Error("Recipient conversation ID is required")
+	if req.RecipientUsername == "" {
+		ctx.Logger.Error("Recipient username is required")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Recipient conversation ID is required"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Recipient username is required"})
 		return
 	}
 
-	ctx.Logger.WithField("message_id", messageID).WithField("recipient_conversation_id", req.RecipientConversationID).WithField("user_id", userID).Info("Forwarding message")
-
-	forwardedMessage, err := rt.db.ForwardMessage(messageID, req.RecipientConversationID, userID)
+	// Use StartConversation to get or create the conversation with the recipient
+	conversation, err := rt.db.StartConversation(userID, req.RecipientUsername)
 	if err != nil {
-		if err.Error() == "user not participant in recipient conversation" {
-			ctx.Logger.WithError(err).Error("User not participant in recipient conversation")
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "You are not a participant in the recipient conversation"})
+		if err.Error() == "recipient user not found" {
+			ctx.Logger.WithError(err).Error("Recipient user not found")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Recipient user not found"})
 			return
 		}
+		ctx.Logger.WithError(err).Error("Error getting/creating conversation")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get conversation"})
+		return
+	}
 
+	ctx.Logger.WithField("message_id", messageID).WithField("recipient_username", req.RecipientUsername).WithField("user_id", userID).Info("Forwarding message")
+
+	forwardedMessage, err := rt.db.ForwardMessage(messageID, conversation.Id, userID)
+	if err != nil {
 		if err.Error() == "original message not found" {
 			ctx.Logger.WithError(err).Error("Original message not found")
 			w.WriteHeader(http.StatusNotFound)

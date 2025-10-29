@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -13,27 +12,21 @@ import (
 // GetMyConversations retrieves all conversations for a specific user
 func (db *appdbimpl) GetMyConversations(userID int64) ([]models.ConversationSummary, error) {
 	query := `
-		SELECT DISTINCT 
+		SELECT DISTINCT
 			c.id,
 			c.type,
 			c.name,
 			c.convo_pic,
-			(SELECT m.timestamp 
-			 FROM messages m 
-			 WHERE m.conversation_id = c.id 
-			 ORDER BY m.timestamp DESC 
-			 LIMIT 1) as last_message_timestamp,
-			(SELECT COALESCE(m.text, 'Photo')
-			 FROM messages m 
-			 WHERE m.conversation_id = c.id 
-			 ORDER BY m.timestamp DESC 
-			 LIMIT 1) as last_message_preview
+			cs.last_message_timestamp,
+			cs.last_message_preview
 		FROM conversations c
 		INNER JOIN conversation_participants cp ON c.id = cp.conversation_id
+		LEFT JOIN conversation_summaries cs ON c.id = cs.id
 		WHERE cp.user_id = ?
-		ORDER BY last_message_timestamp DESC NULLS LAST
+		ORDER BY cs.last_message_timestamp DESC
 		LIMIT 1000
 	`
+
 	rows, err := db.c.Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching conversations: %w", err)
@@ -69,7 +62,7 @@ func (db *appdbimpl) GetMyConversations(userID int64) ([]models.ConversationSumm
 		if lastMsgTimestamp.Valid && lastMsgPreview.Valid {
 			timestamp, _ := time.Parse(time.RFC3339, lastMsgTimestamp.String)
 			conv.LastMessage = &models.MessagePreview{
-				Timestamp: time.Time(timestamp),
+				Timestamp: models.Timestamp(timestamp),
 				Preview:   lastMsgPreview.String,
 			}
 		}
@@ -85,23 +78,28 @@ func (db *appdbimpl) GetMyConversations(userID int64) ([]models.ConversationSumm
 }
 
 // GetConversation retrieves a specific conversation with messages
-func (db *appdbimpl) GetConversation(conversationID, userID int64) (*models.Conversation, error) {
-	// Only check participation if userID is provided (not 0)
-	if userID != 0 {
-		var participantCount int
-		err := db.c.QueryRow("SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = ? AND user_id = ?", conversationID, userID).Scan(&participantCount)
-		if err != nil {
-			return nil, fmt.Errorf("error checking participation: %w", err)
-		}
+func (db *appdbimpl) GetConversation(conversationID models.Id, userID int64) (*models.Conversation, error) {
+	// Check if user is participant
+	var participantCount int
+	err := db.c.QueryRow(
+		"SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
+		conversationID, userID,
+	).Scan(&participantCount)
 
-		if participantCount == 0 {
-			return nil, fmt.Errorf("user not participant in conversation")
-		}
+	if err != nil {
+		return nil, fmt.Errorf("error checking participation: %w", err)
+	}
+	if participantCount == 0 {
+		return nil, fmt.Errorf("user not participant in conversation")
 	}
 
 	// Get conversation details
 	var conv models.Conversation
-	err := db.c.QueryRow("SELECT id, name, type, convo_pic FROM conversations WHERE id = ?", conversationID).Scan(&conv.Id, &conv.Name, &conv.Type, &conv.ConvoPic)
+	err = db.c.QueryRow(
+		"SELECT id, name, type, convo_pic FROM conversations WHERE id = ?",
+		conversationID,
+	).Scan(&conv.Id, &conv.Name, &conv.Type, &conv.ConvoPic)
+
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("conversation not found")
 	}
@@ -127,10 +125,10 @@ func (db *appdbimpl) GetConversation(conversationID, userID int64) (*models.Conv
 }
 
 // StartConversation creates a new direct conversation
-func (db *appdbimpl) StartConversation(senderID int64, recipientUsername string) (*models.Conversation, error) {
+func (db *appdbimpl) StartConversation(senderID int64, recipientUsername models.Username) (*models.Conversation, error) {
 	// Get recipient user ID
 	var recipientID int64
-	err := db.c.QueryRow("SELECT id FROM users WHERE username = ?", recipientUsername).Scan(&recipientID)
+	err := db.c.QueryRow("SELECT id FROM users WHERE username = ?", string(recipientUsername)).Scan(&recipientID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("recipient user not found")
 	}
@@ -140,20 +138,19 @@ func (db *appdbimpl) StartConversation(senderID int64, recipientUsername string)
 
 	// Check if conversation already exists
 	query := `
-		SELECT c.id
+		SELECT c.id 
 		FROM conversations c
 		INNER JOIN conversation_participants cp1 ON c.id = cp1.conversation_id
 		INNER JOIN conversation_participants cp2 ON c.id = cp2.conversation_id
-		WHERE c.type = 'user'
-		AND cp1.user_id = ?
+		WHERE c.type = 'user' 
+		AND cp1.user_id = ? 
 		AND cp2.user_id = ?
 	`
-
 	var existingConvID int64
 	err = db.c.QueryRow(query, senderID, recipientID).Scan(&existingConvID)
 	if err == nil {
 		// Conversation exists, return it
-		return db.GetConversation(existingConvID, senderID)
+		return db.GetConversation(models.Id(existingConvID), senderID)
 	}
 
 	// Create new conversation
@@ -178,25 +175,26 @@ func (db *appdbimpl) StartConversation(senderID int64, recipientUsername string)
 		return nil, fmt.Errorf("error adding participants: %w", err)
 	}
 
-	return db.GetConversation(convID, senderID)
+	return db.GetConversation(models.Id(convID), senderID)
 }
 
 // Helper function to get conversation participants
-func (db *appdbimpl) getConversationParticipants(conversationID int64) ([]string, error) {
+func (db *appdbimpl) getConversationParticipants(conversationID models.Id) ([]models.Username, error) {
 	rows, err := db.c.Query(`
-		SELECT u.username
+		SELECT u.username 
 		FROM users u
 		INNER JOIN conversation_participants cp ON u.id = cp.user_id
 		WHERE cp.conversation_id = ?
 	`, conversationID)
+
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var participants []string
+	var participants []models.Username
 	for rows.Next() {
-		var username string
+		var username models.Username
 		if err := rows.Scan(&username); err != nil {
 			return nil, err
 		}
@@ -207,25 +205,21 @@ func (db *appdbimpl) getConversationParticipants(conversationID int64) ([]string
 		return nil, err
 	}
 
-	return participants, nil
+	return participants, rows.Err()
 }
 
 // Helper function to get conversation messages
-func (db *appdbimpl) getConversationMessages(conversationID int64) ([]models.Message, error) {
+func (db *appdbimpl) getConversationMessages(conversationID models.Id) ([]models.Message, error) {
 	rows, err := db.c.Query(`
 		SELECT 
-			m.id, 
-			u.username as sender_username,
-			m.type, 
-			m.text, 
-			m.photo,
-			m.timestamp,
-			(SELECT COUNT(*) FROM comments c WHERE c.message_id = m.id) as comments_count
+			m.id, m.timestamp, u.username, m.type, m.comments_count, m.text, m.photo
 		FROM messages m
 		INNER JOIN users u ON m.sender_id = u.id
 		WHERE m.conversation_id = ?
-		ORDER BY m.timestamp
+		ORDER BY m.timestamp ASC
+		LIMIT 1000
 	`, conversationID)
+
 	if err != nil {
 		return nil, err
 	}
@@ -235,33 +229,28 @@ func (db *appdbimpl) getConversationMessages(conversationID int64) ([]models.Mes
 	for rows.Next() {
 		var msg models.Message
 		var text sql.NullString
-		var photoBytes []byte
-		var timestamp time.Time
+		var photo sql.NullString
 
 		err := rows.Scan(
 			&msg.Id,
+			&msg.Timestamp,
 			&msg.Sender,
 			&msg.Type,
-			&text,
-			&photoBytes,
-			&timestamp,
 			&msg.CommentsCount,
+			&text,
+			&photo,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		msg.Timestamp = timestamp
-
-		// Handle text
 		if text.Valid {
 			textStr := text.String
 			msg.Text = &textStr
 		}
-		// Convert photo
-		if len(photoBytes) > 0 {
-			photoBase64 := base64.StdEncoding.EncodeToString(photoBytes)
-			msg.Photo = &photoBase64
+		if photo.Valid {
+			pic := models.Pic(photo.String)
+			msg.Photo = &pic
 		}
 
 		// Get comment authors
@@ -272,16 +261,15 @@ func (db *appdbimpl) getConversationMessages(conversationID int64) ([]models.Mes
 
 		messages = append(messages, msg)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	return messages, nil
+	return messages, rows.Err()
 }
 
 // Helper to get comment authors for a message
-func (db *appdbimpl) getMessageCommentAuthors(messageID int64) ([]string, error) {
+func (db *appdbimpl) getMessageCommentAuthors(messageID models.Id) ([]models.Username, error) {
 	rows, err := db.c.Query(`
 		SELECT DISTINCT u.username
 		FROM comments c
@@ -289,14 +277,15 @@ func (db *appdbimpl) getMessageCommentAuthors(messageID int64) ([]string, error)
 		WHERE c.message_id = ?
 		LIMIT 1000
 	`, messageID)
+
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var authors []string
+	var authors []models.Username
 	for rows.Next() {
-		var username string
+		var username models.Username
 		if err := rows.Scan(&username); err != nil {
 			return nil, err
 		}

@@ -1,13 +1,13 @@
 package api
 
 import (
-	"encoding/json"
-	"net/http"
-	"strconv"
+    "encoding/json"
+    "net/http"
+    "strconv"
 
-	"github.com/julienschmidt/httprouter"
-	"github.com/val7e/wasaText/service/api/reqcontext"
-	"github.com/val7e/wasaText/service/database"
+    "github.com/julienschmidt/httprouter"
+    "github.com/val7e/wasaText/service/api/reqcontext"
+    "github.com/val7e/wasaText/service/database"
 )
 
 // createGroup creates a new group
@@ -138,8 +138,8 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 
 	ctx.Logger.WithField("user_id", userID).WithField("group_id", groupID).WithField("new_name", req.Name).Info("Updating group name")
 
-	group, err := rt.db.SetGroupName(groupID, req.Name)
-	if err != nil {
+    group, err := rt.db.SetGroupName(groupID, req.Name)
+    if err != nil {
 		if err.Error() == database.ErrGroupNotFound {
 			ctx.Logger.WithError(err).Error("Group not found")
 			w.WriteHeader(http.StatusNotFound)
@@ -156,6 +156,9 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(group)
 }
+
+// getGroupByConversation returns the group bound to a conversation id (only for participants)
+// getGroupByConversation removed to avoid backend changes per user request
 
 // setGroupPhoto updates a group's photo
 func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {

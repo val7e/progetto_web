@@ -43,31 +43,24 @@ paths:
                 username: { $ref: "#/components/schemas/Username" }
       responses:
         '200':
-          description: Successful login
+          description: Successful login/registration
           content:
             application/json:
               schema:
                 type: object
-                description: Response schema for user login.
+                description: Response schema for user login/registration.
                 properties:
-                  profile: { $ref: "#/components/schemas/User"}
+                  identifier:
+                    type: string
+                    description: User identifier to use as Bearer token.
+                  username:
+                    $ref: "#/components/schemas/Username"
+                  pic:
+                    $ref: "#/components/schemas/Pic"
               example:
-                profile:
-                  username: "alice1"
-                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
-        '201':
-          description: Successful registration
-          content:
-            application/json:
-              schema:
-                type: object
-                description: Response schema for user registration.
-                properties:
-                  profile: { $ref: "#/components/schemas/User"}
-              example:
-                profile:
-                  username: "alice1"
-                  pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
+                identifier: "42"
+                username: "alice1"
+                pic: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
         '400': { $ref: "#/components/responses/BadRequest" }
         '500': { $ref: "#/components/responses/InternalServerError" }
   /users:
@@ -80,7 +73,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-      - name: searched_user
+      - name: searcheduser
         description: Username to search.
         in: query
         required: true
@@ -167,13 +160,69 @@ paths:
         '400': { $ref: "#/components/responses/BadRequest" }
         '404': { $ref: "#/components/responses/NotFound" }
 
+  /groups:
+    post:
+      tags:
+        - Groups
+      operationId: createGroup
+      summary: Creates a new group conversation
+      description: Creates a conversation with type 'group', sets initial name, and adds the creator as first member.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Payload containing the group name.
+              required: [name]
+              properties:
+                name:
+                  $ref: "#/components/schemas/Name"
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '500': { $ref: "#/components/responses/InternalServerError" }
+
+  /groups/{group_id}:
+    get:
+      tags:
+        - Groups
+      operationId: getGroup
+      summary: Gets group details by id (conversation id)
+      description: Returns name, photo and members for the group conversation.
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          description: Conversation id for the group
+          schema:
+            $ref: "#/components/schemas/Id"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Group details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '404': { $ref: "#/components/responses/NotFound" }
+        '500': { $ref: "#/components/responses/InternalServerError" }
+
   /groups/{group_id}/name:
     put:
       tags:
         - Groups
       operationId: setGroupName
       summary: Sets the group name
-      description: Updates the group's name
+      description: Updates the group's name (stored on the conversation)
       parameters:
       - name: group_id
         in: path
@@ -214,7 +263,7 @@ paths:
       operationId: setGroupPhoto
       summary: Sets the group's photo
       description: |
-        Updates the group's photo.
+        Updates the group's photo (base64, stored on the conversation as convo_pic).
 
       parameters:
         - name: group_id
@@ -258,27 +307,26 @@ paths:
           description: ID of the group
           schema:
             $ref: "#/components/schemas/Id"
-    put:
+    post:
       tags:
         - Groups
       operationId: addToGroup
       summary: Adds one or more users to the group
-      description: |
-        Adds users to the specified group. Only group members or admins can perform this action.
+      description: Adds users to the specified group conversation.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              description: Payload to add memebers to a group.
-              required: [ member_ids ]
+              description: Payload containing usernames to add to the group.
+              required: [ members ]
               properties:
-                member_ids:
+                members:
                   type: array
-                  description: Array of user IDs to add to the group
+                  description: Array of usernames to add to the group
                   minItems: 1
-                  maxItems: 100
+                  maxItems: 1000
                   items:
                     $ref: "#/components/schemas/Username"
       responses:
@@ -306,8 +354,7 @@ paths:
         - Groups
       operationId: leaveGroup
       summary: Removes the current user from the group
-      description: |
-        The current user leaves the specified group.
+      description: Leaves the group conversation for the authenticated user.
       responses:
         '204':
           description: Successfully left the group
@@ -489,12 +536,10 @@ paths:
               type: object
               description: Payload for the recipient conversation_id
               required:
-                - recipient_conversation_id
+                - recipient_username
               properties:
-                recipient_conversation_id:
-                  $ref: "#/components/schemas/Id"
-                author:
-                  $ref: "#/components/schemas/Username"
+                recipient_username:
+                  $ref: '#/components/schemas/Username'
       responses:
         '201':
           description: Message forwarded successfully
@@ -567,6 +612,37 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         '404':
           $ref: "#/components/responses/NotFound"
+    get:
+      tags:
+        - Messages
+        - Comments
+      operationId: getComments
+      summary: Retrieves comments of a specific message
+      description: Retrieves all the comments, with author and contect, about a specific message in the given conversation.
+      responses:
+        '200':
+          description: List of comments.
+          content:
+            application/json:
+              schema:
+                title: comments
+                type: array
+                description: Array of comments
+                minItems: 0
+                maxItems: 100
+                items:
+                  $ref: "#/components/schemas/Comment"
+              example:
+                - id: 42
+                  author: "alice123"
+                  text: "I totally agree with this!"
+                - id: 43
+                  author: "bob"
+                  text: "You're right!"
+                
+        '404': { $ref: "#/components/responses/NotFound" }
+        
+  /conversations/{conversation_id}/messages/{message_id}/comments/{comment_id}:
     delete:
       tags:
         - Messages
@@ -579,7 +655,7 @@ paths:
           description: Message deleted successfully
         '401': { $ref: "#/components/responses/Unauthorized" }
         '404': { $ref: "#/components/responses/NotFound" }
-
+    
 components:
   securitySchemes:
     bearerAuth:
@@ -812,7 +888,7 @@ components:
           $ref: "#/components/schemas/Name"
         members:
           type: array
-          description: List of user IDs that are members of the group.
+          description: List of usernames that are members of the group.
           minItems: 1
           maxItems: 1000
           items:
